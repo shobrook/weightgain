@@ -3,6 +3,12 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+# Local
+try:
+    from weightgain.utilities import cosine_similarity
+except ImportError:
+    from utilities import cosine_similarity
+
 
 #########
 # HELPERS
@@ -51,20 +57,6 @@ def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
         ]
     )
     return dataset
-
-
-def cosine_similarity(embedding1: list, embedding2: list) -> float:
-    vec1 = np.array(embedding1)
-    vec2 = np.array(embedding2)
-
-    dot_product = np.dot(vec1, vec2)
-    norm1 = np.linalg.norm(vec1)
-    norm2 = np.linalg.norm(vec2)
-
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-
-    return dot_product / (norm1 * norm2)
 
 
 def add_embeddings(dataset: pd.DataFrame, model: EmbeddingModel):
