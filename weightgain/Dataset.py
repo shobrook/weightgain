@@ -1,3 +1,5 @@
+from utils.openai import call_gpt
+
 # Third party
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -20,8 +22,22 @@ TEST_FRACTION = 0.8
 RANDOM_SEED = 123
 NEGATIVES_PER_POSITIVE = 1
 
+DEFAULT_QA_GENERATE_PROMPT_TMPL = """You are a teacher creating quiz questions on the following CONTEXT\
+# START CONTEXT
+{context_str}
+# END CONTEXT
 
-def generate_dataset() -> list[tuple[str, str, int]]:
+Given the context information and no prior knowledge.
+generate only questions based on the below query.
+
+You are a Teacher/ Professor. Your task is to setup \
+{num_questions_per_chunk} questions for an upcoming \
+quiz/examination. The questions should be diverse in nature \
+across the document. Restrict the questions to the \
+context information provided."
+"""
+
+def generate_dataset(text) -> list[tuple[str, str, int]]:
     return []  # TODO: Return (text_1, text_2, +1 or -1) tuples
 
 
