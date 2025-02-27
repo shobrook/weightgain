@@ -1,13 +1,14 @@
 # Third party
-import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
 # Local
 try:
     from weightgain.utilities import cosine_similarity
+    from weightgain.EmbeddingModel import EmbeddingModel
 except ImportError:
     from utilities import cosine_similarity
+    from EmbeddingModel import EmbeddingModel
 
 
 #########

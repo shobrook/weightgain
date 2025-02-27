@@ -6,12 +6,13 @@ from typing import Optional
 import torch
 import numpy as np
 import pandas as pd
+import plotly.express as px
 
 # Local
 try:
-    from weightgain.utilities import cosine_similarity
+    from weightgain.utilities import cosine_similarity, accuracy_and_stderr
 except ImportError:
-    from utilities import cosine_similarity
+    from utilities import cosine_similarity, accuracy_and_stderr
 
 
 #########
@@ -75,20 +76,45 @@ def apply_matrix_to_df(matrix: torch.tensor, df: pd.DataFrame):
 
 
 class Adapter(object):
-    def __init__(
-        self, matrix: np.ndarray, train_results: Optional[pd.DataFrame] = None
-    ):
+    def __init__(self, matrix: np.ndarray, results: Optional[pd.DataFrame] = None):
         self.matrix = matrix
-        self.train_results = train_results
+        self.results = results
 
     def __matmul__(self, embedding: np.ndarray) -> np.ndarray:
         return embedding @ self.matrix
 
     def to_csv(self, path: str):
-        if self.train_results:
+        if self.results:
             raise Exception("Cannot save Adapter without training results")
 
-        self.train_results.to_csv(path, index=False)
+        self.results.to_csv(path, index=False)
+
+    def plot_loss(self):
+        px.line(
+            self.results,
+            # line_group="dataset",
+            x="epoch",
+            y="loss",
+            color="type",
+            hover_data=["batch_size", "lr", "dropout"],
+            facet_row="lr",
+            facet_col="batch_size",
+            width=500,
+        ).show()
+        # TODO: Optionally save to file
+
+    def plot_accuracy(self):
+        px.line(
+            self.results,
+            # line_group="dataset",
+            x="epoch",
+            y="accuracy",
+            color="type",
+            hover_data=["batch_size", "lr", "dropout"],
+            facet_row="lr",
+            facet_col="batch_size",
+            width=500,
+        ).show()
 
     @classmethod
     def from_file(cls, path: str) -> "Adapter":
@@ -122,20 +148,25 @@ class Adapter(object):
         )
         matrix = torch.randn(embedding_len, embedding_len, requires_grad=True)
 
+        best_acc, best_matrix = 0, matrix
         epochs, types, losses, accuracies = [], [], [], []
         for epoch in range(1, 1 + max_epochs):
             for emb1, emb2, target_sim in train_loader:
+                # Generate prediction and calculate loss
                 pred_sim = model(emb1, emb2, matrix, dropout)
                 loss = mse_loss(pred_sim, target_sim)
-                loss.backward()
+                loss.backward()  # Backpropagate loss
 
+                # Update matrix
                 with torch.no_grad():
                     matrix -= matrix.grad * lr
                     matrix.grad.zero_()
 
+            # Calculate test loss
             test_preds = model(emb1_test, emb2_test, matrix, dropout)
             test_loss = mse_loss(test_preds, sim_test)
 
+            # Compute new embeddings + similarities
             apply_matrix_to_df(matrix, dataset)
 
             # Calculate test accuracy
@@ -151,6 +182,10 @@ class Adapter(object):
                     loss.item() if dataset_type == "train" else test_loss.item()
                 )
                 accuracies.append(accuracy)
+
+                if accuracy > best_acc and dataset_type == "test":
+                    best_acc = accuracy
+                    best_matrix = matrix
 
                 if verbose:
                     print(
@@ -171,6 +206,4 @@ class Adapter(object):
         results["lr"] = lr
         results["dropout"] = dropout
 
-        # TODO: Get the best matrix instead of the last
-
-        return cls(matrix.detach().numpy(), results)
+        return cls(best_matrix.detach().numpy(), results)
