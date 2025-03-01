@@ -367,6 +367,15 @@ wheels = [
 ]
 
 [[package]]
+name = "json-repair"
+version = "0.39.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/60/6d1599bc01070d9fe3840d245ae80fd24b981c732d962842825ce7a9fde6/json_repair-0.39.1.tar.gz", hash = "sha256:e90a489f247e1a8fc86612a5c719872a3dbf9cbaffd6d55f238ec571a77740fa", size = 30040 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/b9/2e445481555422b907dab468b53574bc1e995099ca1a1201d0d876ca05e9/json_repair-0.39.1-py3-none-any.whl", hash = "sha256:3001409a2f319249f13e13d6c622117a5b70ea7e0c6f43864a0233cdffc3a599", size = 20686 },
+]
+
+[[package]]
 name = "jsonschema"
 version = "4.23.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1295,6 +1304,7 @@ name = "weightgain"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "json-repair" },
     { name = "litellm" },
     { name = "numpy" },
     { name = "pandas" },
@@ -1305,6 +1315,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "json-repair", specifier = ">=0.39.1" },
     { name = "litellm", specifier = ">=1.61.20" },
     { name = "numpy", specifier = ">=2.2.3" },
     { name = "pandas", specifier = ">=2.2.3" },
