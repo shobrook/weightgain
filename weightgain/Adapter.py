@@ -10,8 +10,10 @@ import plotly.express as px
 
 # Local
 try:
+    from weightgain.Dataset import Dataset
     from weightgain.utilities import cosine_similarity, accuracy_and_stderr
 except ImportError:
+    from Dataset import Dataset
     from utilities import cosine_similarity, accuracy_and_stderr
 
 
@@ -124,7 +126,7 @@ class Adapter(object):
     @classmethod
     def train(
         cls,
-        dataset: pd.DataFrame,
+        dataset: Dataset,
         batch_size: int = 100,
         max_epochs: int = 100,
         lr: float = 100.0,

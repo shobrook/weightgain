@@ -8,7 +8,7 @@ except ImportError:
     from Adapter import Adapter
 
 
-class EmbeddingModel(object):
+class Model(object):
     def __init__(self, model: str, batch_size: int = 2048, **kwargs):
         self.model = model
         self.batch_size = batch_size

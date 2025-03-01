@@ -1,16 +1,16 @@
-from utils.openai import call_gpt
-
 # Third party
+import json_repair
 import pandas as pd
+from litellm import completion
 from sklearn.model_selection import train_test_split
 
 # Local
 try:
     from weightgain.utilities import cosine_similarity
-    from weightgain.EmbeddingModel import EmbeddingModel
+    from weightgain.Model import Model
 except ImportError:
     from utilities import cosine_similarity
-    from EmbeddingModel import EmbeddingModel
+    from Model import Model
 
 
 #########
@@ -22,23 +22,84 @@ TEST_FRACTION = 0.8
 RANDOM_SEED = 123
 NEGATIVES_PER_POSITIVE = 1
 
-DEFAULT_QA_GENERATE_PROMPT_TMPL = """You are a teacher creating quiz questions on the following CONTEXT\
-# START CONTEXT
-{context_str}
-# END CONTEXT
+PROMPT = """Your task is to generate synthetic data to fine-tune an embedding model. \
+The data should consist of pairs of text strings (text_1, text_2). \
 
-Given the context information and no prior knowledge.
-generate only questions based on the below query.
+You should generate a dataset of {n} pairs of text strings. Pairs should be unique and varied.
 
-You are a Teacher/ Professor. Your task is to setup \
-{num_questions_per_chunk} questions for an upcoming \
-quiz/examination. The questions should be diverse in nature \
-across the document. Restrict the questions to the \
-context information provided."
-"""
+The first string, text_1, should be generated from the following prompt:
 
-def generate_dataset(text) -> list[tuple[str, str, int]]:
-    return []  # TODO: Return (text_1, text_2, +1 or -1) tuples
+<prompt_1>
+{prompt_1}
+</prompt_1>
+
+The second string, text_2, should be generated from the following prompt:
+
+<prompt_2>
+{prompt_2}
+</prompt_2>
+
+You MUST generate {n} pairs of text strings."""
+
+
+def generate_dataset(
+    prompt_1: str, prompt_2: str, model: str, n: int = 100
+) -> list[tuple[str, str, int]]:
+    response = completion(
+        model=model,
+        messages=[
+            {
+                "role": "user",
+                "content": PROMPT.format(prompt_1=prompt_1, prompt_2=prompt_2, n=n),
+            }
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "synthetic_data_response",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "data": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "text_1": {
+                                        "type": "string",
+                                        "description": prompt_1,
+                                    },
+                                    "text_2": {
+                                        "type": "string",
+                                        "description": prompt_2,
+                                    },
+                                },
+                                "required": ["text_1", "text_2"],
+                                "additionalProperties": False,
+                            },
+                            "description": f"List of {n} pairs of text strings.",
+                        }
+                    },
+                    "required": ["data"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    )
+    response = response.choices[0].message.content
+    response = json_repair.loads(response)
+
+    dataset = []
+    for pair in response["data"]:
+        dataset.append((pair["text_1"], pair["text_2"], 1))
+
+    # TODO: Generate more if len(dataset) < n.
+
+    print(dataset)
+
+    df = pd.DataFrame(dataset, columns=["text_1", "text_2", "label"])
+    return df
 
 
 def split_dataset(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -76,9 +137,9 @@ def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
     return dataset
 
 
-def add_embeddings(dataset: pd.DataFrame, model: EmbeddingModel):
+def add_embeddings(dataset: pd.DataFrame, model: Model):
     for column in ["text_1", "text_2"]:
-        dataset[f"{column}_embedding"] = model.run(dataset[column])
+        dataset[f"{column}_embedding"] = model.get_embeddings(dataset[column])
 
     dataset["cosine_similarity"] = dataset.apply(
         lambda row: cosine_similarity(row["text_1_embedding"], row["text_2_embedding"]),
@@ -95,10 +156,20 @@ class Dataset(object):
     def __init__(self, df: pd.DataFrame):
         self.df = df
 
+    def __getitem__(self, key):
+        return self.df[key]
+
+    def __setitem__(self, key, value):
+        self.df[key] = value
+
+    def apply(self, func, axis=0, **kwargs):
+        return self.df.apply(func, axis=axis, **kwargs)
+
     @classmethod
-    def from_llm(cls, model: EmbeddingModel, llm: str) -> "Dataset":
-        dataset = generate_dataset()
-        df = pd.DataFrame(dataset, columns=["text_1", "text_2", "label"])
+    def from_synthetic(
+        cls, prompt_1: str, prompt_2: str, model: Model, llm: str, n: int = 100
+    ) -> "Dataset":
+        df = generate_dataset(prompt_1, prompt_2, llm, n)
         train_df, test_df = split_dataset(df)
         train_df = add_negatives(train_df)
         test_df = add_negatives(test_df)
@@ -107,7 +178,7 @@ class Dataset(object):
         return cls(df)
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame, model: EmbeddingModel) -> "Dataset":
+    def from_dataframe(cls, df: pd.DataFrame, model: Model) -> "Dataset":
         train_df, test_df = split_dataset(df)
         train_df = add_negatives(train_df)
         test_df = add_negatives(test_df)
