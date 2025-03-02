@@ -1,6 +1,6 @@
 [project]
 name = "weightgain"
-version = "0.4.0"
+version = "0.5.0"
 description = "Train an adapter for any embedding model in <1min"
 readme = "README.md"
 requires-python = ">=3.12"

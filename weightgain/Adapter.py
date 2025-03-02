@@ -1,5 +1,4 @@
 # Standard library
-import random
 from typing import Optional
 
 # Third party
@@ -8,13 +7,16 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from tqdm import tqdm
 from plotly.subplots import make_subplots
 
 # Local
 try:
     from weightgain.Dataset import Dataset
+    from weightgain.Model import Model
     from weightgain.utilities import cosine_similarity, accuracy_and_stderr
 except ImportError:
+    from .Model import Model
     from .Dataset import Dataset
     from utilities import cosine_similarity, accuracy_and_stderr
 
@@ -36,7 +38,7 @@ def tensors_from_df(df: pd.DataFrame) -> tuple[torch.tensor]:
     return embedding1, embedding2, similarity
 
 
-def model(
+def predict(
     embedding1: torch.tensor,
     embedding2: torch.tensor,
     matrix: torch.tensor,
@@ -70,6 +72,16 @@ def apply_matrix_to_df(matrix: torch.tensor, df: pd.DataFrame):
         lambda row: cosine_similarity(
             row["text_1_embedding_custom"], row["text_2_embedding_custom"]
         ),
+        axis=1,
+    )
+
+
+def add_embeddings_to_df(dataset: pd.DataFrame, model: Model):
+    for column in tqdm(["text_1", "text_2"], desc="Calculating embeddings"):
+        dataset[f"{column}_embedding"] = model.get_embeddings(dataset[column])
+
+    dataset["cosine_similarity"] = dataset.apply(
+        lambda row: cosine_similarity(row["text_1_embedding"], row["text_2_embedding"]),
         axis=1,
     )
 
@@ -212,11 +224,13 @@ class Adapter(object):
     def train(
         cls,
         dataset: Dataset,
+        model: Model,
         batch_size: int = 100,
         max_epochs: int = 100,
         learning_rate: float = 100.0,
         dropout: float = 0.0,
     ) -> "Adapter":
+        add_embeddings_to_df(dataset, model)
         embedding_len = len(dataset["text_1_embedding"].values[0])
 
         emb1_train, emb2_train, sim_train = tensors_from_df(
@@ -238,7 +252,7 @@ class Adapter(object):
         for epoch in range(1, 1 + max_epochs):
             for emb1, emb2, target_sim in train_loader:
                 # Generate prediction and calculate loss
-                pred_sim = model(emb1, emb2, matrix, dropout)
+                pred_sim = predict(emb1, emb2, matrix, dropout)
                 loss = mse_loss(pred_sim, target_sim)
                 loss.backward()  # Backpropagate loss
 
@@ -248,7 +262,7 @@ class Adapter(object):
                     matrix.grad.zero_()
 
             # Calculate test loss
-            test_preds = model(emb1_test, emb2_test, matrix, dropout)
+            test_preds = predict(emb1_test, emb2_test, matrix, dropout)
             test_loss = mse_loss(test_preds, sim_test)
 
             # Compute new embeddings + similarities

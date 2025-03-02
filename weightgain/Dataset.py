@@ -178,6 +178,18 @@ async def generate_dataset(
     return df
 
 
+def sync_generate_dataset(
+    chunks: list[str], model: str, n_per_chunk: int = 100
+) -> pd.DataFrame:
+    try:
+        loop = asyncio.get_running_loop()
+        df = loop.run_until_complete(generate_dataset(chunks, model, n_per_chunk))
+    except RuntimeError:
+        df = asyncio.run(generate_dataset(chunks, model, n_per_chunk))
+
+    return df
+
+
 def split_dataset(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     if "chunk_id" in dataset.columns:
         chunk_ids = dataset["chunk_id"].unique()
@@ -200,7 +212,7 @@ def split_dataset(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return train_df, test_df
 
 
-def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
+def add_negatives_helper(dataset: pd.DataFrame) -> pd.DataFrame:
     texts = set(dataset["text_1"].values) | set(dataset["text_2"].values)
     all_pairs = {(t1, t2) for t1 in texts for t2 in texts if t1 < t2}
     positive_pairs = set(
@@ -222,24 +234,11 @@ def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
     return dataset
 
 
-def add_embeddings(dataset: pd.DataFrame, model: Model):
-    print("Calculating embeddings")
-
-    for column in ["text_1", "text_2"]:
-        dataset[f"{column}_embedding"] = model.get_embeddings(dataset[column])
-
-    dataset["cosine_similarity"] = dataset.apply(
-        lambda row: cosine_similarity(row["text_1_embedding"], row["text_2_embedding"]),
-        axis=1,
-    )
-
-
-def add_negatives_and_embeddings(dataset: pd.DataFrame, model: Model) -> pd.DataFrame:
+def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
     train_df, test_df = split_dataset(dataset)
-    train_df = add_negatives(train_df)
-    test_df = add_negatives(test_df)
+    train_df = add_negatives_helper(train_df)
+    test_df = add_negatives_helper(test_df)
     dataset = pd.concat([train_df, test_df])
-    add_embeddings(dataset, model)
     return dataset
 
 
@@ -265,38 +264,29 @@ class Dataset(object):
     def from_chunks(
         cls, chunks: list[str], model: Model, llm: str, n_queries_per_chunk: int = 1
     ) -> "Dataset":
-        df = asyncio.run(generate_dataset(chunks, llm, n_queries_per_chunk))
-        df = add_negatives_and_embeddings(df, model)
+        df = sync_generate_dataset(chunks, llm, n_queries_per_chunk)
+        df = add_negatives(df, model)
         return cls(df)
 
     @classmethod
     def from_synthetic_chunks(
         cls,
         prompt: str,
-        model: Model,
         llm: str,
         n_chunks: int = 100,
         n_queries_per_chunk: int = 1,
     ) -> "Dataset":
         chunks = generate_chunks(prompt, llm, n_chunks)
-
-        try:
-            loop = asyncio.get_running_loop()
-            df = loop.run_until_complete(
-                generate_dataset(chunks, llm, n_queries_per_chunk)
-            )
-        except RuntimeError:
-            df = asyncio.run(generate_dataset(chunks, llm, n_queries_per_chunk))
-
-        df = add_negatives_and_embeddings(df, model)
+        df = sync_generate_dataset(chunks, llm, n_queries_per_chunk)
+        df = add_negatives(df)
         return cls(df)
 
     @classmethod
-    def from_pairs(cls, text_pairs: list[tuple[str, str]], model: Model) -> "Dataset":
+    def from_pairs(cls, text_pairs: list[tuple[str, str]]) -> "Dataset":
         text_pairs = [
             (index, text_1, text_2, 1)
             for index, (text_1, text_2) in enumerate(text_pairs)
         ]
         df = pd.DataFrame(text_pairs, columns=["id", "text_1", "text_2", "label"])
-        df = add_negatives_and_embeddings(df, model)
+        df = add_negatives(df)
         return cls(df)
