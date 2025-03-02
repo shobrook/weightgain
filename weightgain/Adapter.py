@@ -116,33 +116,7 @@ class Adapter(object):
         fig1.show()
         fig2.show()
 
-    def plot_loss(self):
-        px.line(
-            self.results,
-            # line_group="dataset",
-            x="epoch",
-            y="loss",
-            color="type",
-            hover_data=["batch_size", "learning_rate", "dropout"],
-            facet_row="learning_rate",
-            facet_col="batch_size",
-            width=500,
-        ).show()
-
-    def plot_accuracy(self):
-        px.line(
-            self.results,
-            # line_group="dataset",
-            x="epoch",
-            y="accuracy",
-            color="type",
-            hover_data=["batch_size", "learning_rate", "dropout"],
-            facet_row="learning_rate",
-            facet_col="batch_size",
-            width=500,
-        ).show()
-
-    def show_report(self):
+    def show_report(self, save_path: str = None):
         if self.results is None:
             raise Exception("Cannot generate report without training results")
 
@@ -186,71 +160,48 @@ class Adapter(object):
                 col=2,
             )
 
-        # Check if we have the dataset attribute for similarity distributions
-        if hasattr(self, "dataset"):
-            # Add original similarity distribution
-            for dataset_type in ["train", "test"]:
-                subset = self.dataset[self.dataset["dataset"] == dataset_type]
+        # Add original similarity distribution
+        for label_value in [-1, 1]:
+            label_subset = self.dataset[self.dataset["label"] == label_value]
+            if not label_subset.empty:
+                fig.add_trace(
+                    go.Histogram(
+                        x=label_subset["cosine_similarity"],
+                        name=f"Original {dataset_type} (label={label_value})",
+                        opacity=0.7,
+                        nbinsx=30,
+                        marker_color="blue" if label_value == 1 else "red",
+                    ),
+                    row=2,
+                    col=1,
+                )
 
-                # Add original similarity distribution
-                for label_value in [-1, 1]:
-                    label_subset = subset[subset["label"] == label_value]
-                    if not label_subset.empty:
-                        fig.add_trace(
-                            go.Histogram(
-                                x=label_subset["cosine_similarity"],
-                                name=f"Original {dataset_type} (label={label_value})",
-                                opacity=0.7,
-                                nbinsx=30,
-                            ),
-                            row=2,
-                            col=1,
-                        )
-
-                # Add custom similarity distribution
-                for label_value in [-1, 1]:
-                    label_subset = subset[subset["label"] == label_value]
-                    if not label_subset.empty:
-                        fig.add_trace(
-                            go.Histogram(
-                                x=label_subset["cosine_similarity_custom"],
-                                name=f"Custom {dataset_type} (label={label_value})",
-                                opacity=0.7,
-                                nbinsx=30,
-                            ),
-                            row=2,
-                            col=2,
-                        )
-        else:
-            # If we don't have the dataset, add empty plots with a message
-            fig.add_annotation(
-                text="Similarity data not available",
-                xref="x3",
-                yref="y3",
-                x=0.5,
-                y=0.5,
-                showarrow=False,
-                row=2,
-                col=1,
-            )
-
-            fig.add_annotation(
-                text="Similarity data not available",
-                xref="x4",
-                yref="y4",
-                x=0.5,
-                y=0.5,
-                showarrow=False,
-                row=2,
-                col=2,
-            )
+        # Add custom similarity distribution
+        for label_value in [-1, 1]:
+            label_subset = self.dataset[self.dataset["label"] == label_value]
+            if not label_subset.empty:
+                fig.add_trace(
+                    go.Histogram(
+                        x=label_subset["cosine_similarity_custom"],
+                        name=f"Custom {dataset_type} (label={label_value})",
+                        opacity=0.7,
+                        nbinsx=30,
+                        marker_color="blue" if label_value == 1 else "red",
+                    ),
+                    row=2,
+                    col=2,
+                )
 
         # Update layout
         fig.update_layout(
             height=800, width=1000, title_text="Training Report", barmode="overlay"
         )
 
-        fig.show()
+        if save_path:
+            fig.write_html(save_path)
+            print(f"Report saved to {save_path}")
+        else:
+            fig.show()
 
     @classmethod
     def from_file(cls, path: str) -> "Adapter":
