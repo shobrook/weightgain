@@ -255,6 +255,20 @@ class Dataset(object):
     def apply(self, func, axis=0, **kwargs):
         return self.df.apply(func, axis=axis, **kwargs)
 
+    def plot_similarities(self, save_path: str = None):
+        fig = px.histogram(
+            self.df,
+            x="cosine_similarity",
+            color="label",
+            barmode="overlay",
+            width=1000,
+            facet_row="dataset",
+        )
+        fig.show()
+
+        if save_path:
+            fig.write_image(save_path)
+
     @classmethod
     def from_chunks(
         cls, chunks: list[str], model: Model, llm: str, n_queries_per_chunk: int = 1
@@ -278,22 +292,11 @@ class Dataset(object):
         return cls(df)
 
     @classmethod
-    def from_qa_pairs(cls, qa_pairs: list[tuple[str, str]], model: Model) -> "Dataset":
-        qa_pairs = [(index, q, a, 1) for index, (q, a) in enumerate(qa_pairs)]
-        df = pd.DataFrame(qa_pairs, columns=["id", "text_1", "text_2", "label"])
+    def from_pairs(cls, text_pairs: list[tuple[str, str]], model: Model) -> "Dataset":
+        text_pairs = [
+            (index, text_1, text_2, 1)
+            for index, (text_1, text_2) in enumerate(text_pairs)
+        ]
+        df = pd.DataFrame(text_pairs, columns=["id", "text_1", "text_2", "label"])
         df = add_negatives_and_embeddings(df, model)
         return cls(df)
-
-    def plot_similarities(self, save_path: str = None):
-        fig = px.histogram(
-            self.df,
-            x="cosine_similarity",
-            color="label",
-            barmode="overlay",
-            width=1000,
-            facet_row="dataset",
-        )
-        fig.show()
-
-        if save_path:
-            fig.write_image(save_path)

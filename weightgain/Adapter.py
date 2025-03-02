@@ -13,7 +13,7 @@ try:
     from weightgain.Dataset import Dataset
     from weightgain.utilities import cosine_similarity, accuracy_and_stderr
 except ImportError:
-    from Dataset import Dataset
+    from .Dataset import Dataset
     from utilities import cosine_similarity, accuracy_and_stderr
 
 
@@ -98,8 +98,8 @@ class Adapter(object):
             x="epoch",
             y="loss",
             color="type",
-            hover_data=["batch_size", "lr", "dropout"],
-            facet_row="lr",
+            hover_data=["batch_size", "learning_rate", "dropout"],
+            facet_row="learning_rate",
             facet_col="batch_size",
             width=500,
         ).show()
@@ -112,8 +112,8 @@ class Adapter(object):
             x="epoch",
             y="accuracy",
             color="type",
-            hover_data=["batch_size", "lr", "dropout"],
-            facet_row="lr",
+            hover_data=["batch_size", "learning_rate", "dropout"],
+            facet_row="learning_rate",
             facet_col="batch_size",
             width=500,
         ).show()
@@ -129,9 +129,8 @@ class Adapter(object):
         dataset: Dataset,
         batch_size: int = 100,
         max_epochs: int = 100,
-        lr: float = 100.0,
+        learning_rate: float = 100.0,
         dropout: float = 0.0,
-        verbose: bool = True,
     ) -> "Adapter":
         run_id = random.randint(0, 2**31 - 1)
         embedding_len = len(dataset["text_1_embedding"].values[0])
@@ -161,7 +160,7 @@ class Adapter(object):
 
                 # Update matrix
                 with torch.no_grad():
-                    matrix -= matrix.grad * lr
+                    matrix -= matrix.grad * learning_rate
                     matrix.grad.zero_()
 
             # Calculate test loss
@@ -189,10 +188,9 @@ class Adapter(object):
                     best_acc = accuracy
                     best_matrix = matrix
 
-                if verbose:
-                    print(
-                        f"Epoch {epoch}/{max_epochs}: {dataset_type} accuracy: {accuracy:0.1%} ± {1.96 * stderr:0.1%}"
-                    )
+                print(
+                    f"Epoch {epoch}/{max_epochs}: {dataset_type} accuracy: {accuracy:0.1%} ± {1.96 * stderr:0.1%}"
+                )
 
         results = pd.DataFrame(
             {
@@ -205,7 +203,7 @@ class Adapter(object):
         results["run_id"] = run_id
         results["batch_size"] = batch_size
         results["max_epochs"] = max_epochs
-        results["lr"] = lr
+        results["learning_rate"] = learning_rate
         results["dropout"] = dropout
 
         return cls(best_matrix.detach().numpy(), results)
