@@ -7,6 +7,8 @@ import torch
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Local
 try:
@@ -82,7 +84,10 @@ class Adapter(object):
         self.matrix = matrix
         self.results = results
 
-    def __matmul__(self, embedding: np.ndarray) -> np.ndarray:
+    def __matmul__(self, embedding) -> np.ndarray:
+        if isinstance(embedding, list):
+            embedding = np.array(embedding)
+
         return embedding @ self.matrix
 
     def to_csv(self, path: str):
@@ -90,6 +95,26 @@ class Adapter(object):
             raise Exception("Cannot save Adapter without training results")
 
         self.results.to_csv(path, index=False)
+
+    def plot_sim_dists(self):
+        fig1 = px.histogram(
+            self.results,
+            x="cosine_similarity",
+            color="label",
+            barmode="overlay",
+            width=500,
+            facet_row="dataset",
+        )
+        fig2 = px.histogram(
+            self.results,
+            x="cosine_similarity_custom",
+            color="label",
+            barmode="overlay",
+            width=500,
+            facet_row="dataset",
+        )
+        fig1.show()
+        fig2.show()
 
     def plot_loss(self):
         px.line(
@@ -103,7 +128,6 @@ class Adapter(object):
             facet_col="batch_size",
             width=500,
         ).show()
-        # TODO: Optionally save to file
 
     def plot_accuracy(self):
         px.line(
@@ -117,6 +141,116 @@ class Adapter(object):
             facet_col="batch_size",
             width=500,
         ).show()
+
+    def show_report(self):
+        if self.results is None:
+            raise Exception("Cannot generate report without training results")
+
+        # Create a 2x2 subplot figure
+        fig = make_subplots(
+            rows=2,
+            cols=2,
+            subplot_titles=(
+                "Training and Test Loss",
+                "Training and Test Accuracy",
+                "Original Cosine Similarity Distribution",
+                "Adapted Cosine Similarity Distribution",
+            ),
+        )
+
+        # Add loss plot
+        for dataset_type in self.results["type"].unique():
+            data = self.results[self.results["type"] == dataset_type]
+            fig.add_trace(
+                go.Scatter(
+                    x=data["epoch"],
+                    y=data["loss"],
+                    mode="lines",
+                    name=f"{dataset_type} loss",
+                ),
+                row=1,
+                col=1,
+            )
+
+        # Add accuracy plot
+        for dataset_type in self.results["type"].unique():
+            data = self.results[self.results["type"] == dataset_type]
+            fig.add_trace(
+                go.Scatter(
+                    x=data["epoch"],
+                    y=data["accuracy"],
+                    mode="lines",
+                    name=f"{dataset_type} accuracy",
+                ),
+                row=1,
+                col=2,
+            )
+
+        # Check if we have the dataset attribute for similarity distributions
+        if hasattr(self, "dataset"):
+            # Add original similarity distribution
+            for dataset_type in ["train", "test"]:
+                subset = self.dataset[self.dataset["dataset"] == dataset_type]
+
+                # Add original similarity distribution
+                for label_value in [-1, 1]:
+                    label_subset = subset[subset["label"] == label_value]
+                    if not label_subset.empty:
+                        fig.add_trace(
+                            go.Histogram(
+                                x=label_subset["cosine_similarity"],
+                                name=f"Original {dataset_type} (label={label_value})",
+                                opacity=0.7,
+                                nbinsx=30,
+                            ),
+                            row=2,
+                            col=1,
+                        )
+
+                # Add custom similarity distribution
+                for label_value in [-1, 1]:
+                    label_subset = subset[subset["label"] == label_value]
+                    if not label_subset.empty:
+                        fig.add_trace(
+                            go.Histogram(
+                                x=label_subset["cosine_similarity_custom"],
+                                name=f"Custom {dataset_type} (label={label_value})",
+                                opacity=0.7,
+                                nbinsx=30,
+                            ),
+                            row=2,
+                            col=2,
+                        )
+        else:
+            # If we don't have the dataset, add empty plots with a message
+            fig.add_annotation(
+                text="Similarity data not available",
+                xref="x3",
+                yref="y3",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                row=2,
+                col=1,
+            )
+
+            fig.add_annotation(
+                text="Similarity data not available",
+                xref="x4",
+                yref="y4",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                row=2,
+                col=2,
+            )
+
+        # Update layout
+        fig.update_layout(
+            height=800, width=1000, title_text="Training Report", barmode="overlay"
+        )
+
+        fig.show()
 
     @classmethod
     def from_file(cls, path: str) -> "Adapter":
@@ -132,7 +266,6 @@ class Adapter(object):
         learning_rate: float = 100.0,
         dropout: float = 0.0,
     ) -> "Adapter":
-        run_id = random.randint(0, 2**31 - 1)
         embedding_len = len(dataset["text_1_embedding"].values[0])
 
         emb1_train, emb2_train, sim_train = tensors_from_df(
@@ -200,10 +333,11 @@ class Adapter(object):
                 "accuracy": accuracies,
             }
         )
-        results["run_id"] = run_id
         results["batch_size"] = batch_size
         results["max_epochs"] = max_epochs
         results["learning_rate"] = learning_rate
         results["dropout"] = dropout
 
-        return cls(best_matrix.detach().numpy(), results)
+        adapter = cls(best_matrix.detach().numpy(), results)
+        adapter.dataset = dataset
+        return adapter
