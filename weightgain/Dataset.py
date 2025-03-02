@@ -1,16 +1,21 @@
+# Standard library
+import asyncio
+
 # Third party
 import json_repair
 import pandas as pd
-from litellm import completion
+import plotly.express as px
+from tqdm.asyncio import tqdm_asyncio
+from litellm import completion, acompletion
 from sklearn.model_selection import train_test_split
 
 # Local
 try:
-    from weightgain.utilities import cosine_similarity
     from weightgain.Model import Model
+    from weightgain.utilities import cosine_similarity
 except ImportError:
+    from .Model import Model
     from utilities import cosine_similarity
-    from Model import Model
 
 
 #########
@@ -22,66 +27,83 @@ TEST_FRACTION = 0.8
 RANDOM_SEED = 123
 NEGATIVES_PER_POSITIVE = 1
 
-PROMPT = """Your task is to generate synthetic data to fine-tune an embedding model. \
-The data should consist of pairs of text strings (text_1, text_2). \
+CHUNKS_PROMPT = """Your task is to generate synthetic data for fine-tuning an embedding model. \
+This data will be used to improve retrieval performance in a question-answering system. \
+Your goal is to create diverse, realistic text chunks based on a given prompt.
 
-You should generate a dataset of {n} pairs of text strings. Pairs should be unique and varied.
+Here is the prompt you should base your chunks on:
 
-The first string, text_1, should be generated from the following prompt:
+<chunk_prompt>
+{prompt}
+</chunk_prompt>
 
-<prompt_1>
-{prompt_1}
-</prompt_1>
+You need to generate the following number of chunks:
 
-The second string, text_2, should be generated from the following prompt:
+<chunk_count>
+{n}
+</chunk_count>
 
-<prompt_2>
-{prompt_2}
-</prompt_2>
+Follow these instructions when generating your chunks:
 
-You MUST generate {n} pairs of text strings."""
+<instructions>
+- Read and understand the chunk prompt carefully.
+- Generate <chunk_count> unique text chunks based on the chunk prompt.
+- Ensure each chunk is diverse and represents a unique aspect or feature of the prompt.
+- Each chunk should be realistic and based on real-world situations related to the prompt.
+- Avoid repetition or highly similar chunks.
+</instructions>"""
+
+QA_PROMPT = """Your task is to generate synthetic questions based on the provided context. \
+These questions will be used to fine-tune an embedding model to improve retrieval against this context.
+
+Here is the context you should base your questions on:
+
+<context>
+{context}
+</context>
+
+You need to generate the following number of questions:
+
+<question_count>
+{n}
+</question_count>
+
+Follow these instructions when generating your questions:
+
+<instructions>
+- Read and analyze the provided context carefully.
+- Generate <question_count> unique questions based on the context.
+- Base your questions solely on the information in the context. DO NOT use prior knowledge.
+- Ensure that your questions are diverse and cover different aspects of the context.
+</instructions>"""
 
 
-def generate_dataset(
-    prompt_1: str, prompt_2: str, model: str, n: int = 100
-) -> list[tuple[str, str, int]]:
+def generate_chunks(prompt: str, model: str, n: int = 100) -> list[str]:
+    print(f"Generating chunks")
+
     response = completion(
         model=model,
         messages=[
-            {
-                "role": "user",
-                "content": PROMPT.format(prompt_1=prompt_1, prompt_2=prompt_2, n=n),
-            }
+            {"role": "user", "content": CHUNKS_PROMPT.format(prompt=prompt, n=n)}
         ],
         response_format={
             "type": "json_schema",
             "json_schema": {
-                "name": "synthetic_data_response",
+                "name": "chunks_response",
                 "strict": True,
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "data": {
+                        "chunks": {
                             "type": "array",
                             "items": {
-                                "type": "object",
-                                "properties": {
-                                    "text_1": {
-                                        "type": "string",
-                                        "description": prompt_1,
-                                    },
-                                    "text_2": {
-                                        "type": "string",
-                                        "description": prompt_2,
-                                    },
-                                },
-                                "required": ["text_1", "text_2"],
-                                "additionalProperties": False,
+                                "type": "string",
+                                "description": "A text chunk based on the <chunk_prompt>.",
                             },
-                            "description": f"List of {n} pairs of text strings.",
+                            "description": f"List of text chunks based on the <chunk_prompt>. len(chunks) >= {n}.",
                         }
                     },
-                    "required": ["data"],
+                    "required": ["chunks"],
                     "additionalProperties": False,
                 },
             },
@@ -89,20 +111,77 @@ def generate_dataset(
     )
     response = response.choices[0].message.content
     response = json_repair.loads(response)
+    chunks = response["chunks"][:n]
+
+    if len(chunks) < n:
+        # TODO: Generate more until we reach n
+        print(f"Warning: Generated only {len(chunks)} chunks. Expected {n}.")
+
+    return chunks
+
+
+async def generate_dataset(
+    chunks: list[str], model: str, n_per_chunk: int = 100
+) -> pd.DataFrame:
+    tasks = []
+    for chunk in chunks:
+        task = acompletion(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": QA_PROMPT.format(context=chunk, n=n_per_chunk),
+                }
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "questions_response",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "questions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "description": "A question based on the <context>.",
+                                },
+                                "description": f"List of questions based on the <context>. len(questions) >= {n_per_chunk}.",
+                            },
+                        },
+                        "required": ["questions"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        )
+        tasks.append(task)
+
+    results = await tqdm_asyncio.gather(
+        *tasks,
+        desc=f"Generating questions",
+    )
 
     dataset = []
-    for pair in response["data"]:
-        dataset.append((pair["text_1"], pair["text_2"], 1))
+    for chunk_id, (chunk, result) in enumerate(zip(chunks, results)):
+        result = json_repair.loads(result.choices[0].message.content)
+        questions = result["questions"][:n_per_chunk]
 
-    # TODO: Generate more if len(dataset) < n.
+        if len(questions) < n_per_chunk:
+            print(
+                f"Warning: Chunk {chunk_id} generated only {len(questions)} questions."
+            )
 
-    print(dataset)
+        dataset += [(chunk_id, question, chunk, 1) for question in questions]
 
-    df = pd.DataFrame(dataset, columns=["text_1", "text_2", "label"])
+    df = pd.DataFrame(dataset, columns=["id", "text_1", "text_2", "label"])
     return df
 
 
 def split_dataset(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # TODO: Ensure no test-set contamination (e.g. same chunk in both train and test)
+
     train_df, test_df = train_test_split(
         dataset,
         test_size=TEST_FRACTION,
@@ -124,7 +203,7 @@ def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
     negative_pairs = all_pairs - positive_pairs
     negatives_dataset = pd.DataFrame(list(negative_pairs), columns=["text_1", "text_2"])
     negatives_dataset["label"] = -1
-    negatives_dataset["dataset"] = dataset["dataset"]
+    negatives_dataset["dataset"] = dataset["dataset"].iloc[0]
 
     dataset = pd.concat(
         [
@@ -138,6 +217,8 @@ def add_negatives(dataset: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_embeddings(dataset: pd.DataFrame, model: Model):
+    print("Calculating embeddings")
+
     for column in ["text_1", "text_2"]:
         dataset[f"{column}_embedding"] = model.get_embeddings(dataset[column])
 
@@ -145,6 +226,15 @@ def add_embeddings(dataset: pd.DataFrame, model: Model):
         lambda row: cosine_similarity(row["text_1_embedding"], row["text_2_embedding"]),
         axis=1,
     )
+
+
+def add_negatives_and_embeddings(dataset: pd.DataFrame, model: Model) -> pd.DataFrame:
+    train_df, test_df = split_dataset(dataset)
+    train_df = add_negatives(train_df)
+    test_df = add_negatives(test_df)
+    dataset = pd.concat([train_df, test_df])
+    add_embeddings(dataset, model)
+    return dataset
 
 
 ######
@@ -166,25 +256,44 @@ class Dataset(object):
         return self.df.apply(func, axis=axis, **kwargs)
 
     @classmethod
-    def from_synthetic(
-        cls, prompt_1: str, prompt_2: str, model: Model, llm: str, n: int = 100
+    def from_chunks(
+        cls, chunks: list[str], model: Model, llm: str, n_queries_per_chunk: int = 1
     ) -> "Dataset":
-        df = generate_dataset(prompt_1, prompt_2, llm, n)
-        train_df, test_df = split_dataset(df)
-        train_df = add_negatives(train_df)
-        test_df = add_negatives(test_df)
-        df = pd.concat([train_df, test_df])
-        add_embeddings(df, model)
+        df = asyncio.run(generate_dataset(chunks, llm, n_queries_per_chunk))
+        df = add_negatives_and_embeddings(df, model)
         return cls(df)
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame, model: Model) -> "Dataset":
-        train_df, test_df = split_dataset(df)
-        train_df = add_negatives(train_df)
-        test_df = add_negatives(test_df)
-        df = pd.concat([train_df, test_df])
-        add_embeddings(df, model)
+    def from_synthetic_chunks(
+        cls,
+        prompt: str,
+        model: Model,
+        llm: str,
+        n_chunks: int = 100,
+        n_queries_per_chunk: int = 1,
+    ) -> "Dataset":
+        chunks = generate_chunks(prompt, llm, n_chunks)
+        df = asyncio.run(generate_dataset(chunks, llm, n_queries_per_chunk))
+        df = add_negatives_and_embeddings(df, model)
         return cls(df)
 
-    def plot_similarities(self):
-        pass  # TODO
+    @classmethod
+    def from_qa_pairs(cls, qa_pairs: list[tuple[str, str]], model: Model) -> "Dataset":
+        qa_pairs = [(index, q, a, 1) for index, (q, a) in enumerate(qa_pairs)]
+        df = pd.DataFrame(qa_pairs, columns=["id", "text_1", "text_2", "label"])
+        df = add_negatives_and_embeddings(df, model)
+        return cls(df)
+
+    def plot_similarities(self, save_path: str = None):
+        fig = px.histogram(
+            self.df,
+            x="cosine_similarity",
+            color="label",
+            barmode="overlay",
+            width=1000,
+            facet_row="dataset",
+        )
+        fig.show()
+
+        if save_path:
+            fig.write_image(save_path)

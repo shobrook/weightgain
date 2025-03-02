@@ -1311,6 +1311,7 @@ dependencies = [
     { name = "plotly" },
     { name = "scikit-learn" },
     { name = "torch" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
@@ -1322,6 +1323,7 @@ requires-dist = [
     { name = "plotly", specifier = ">=6.0.0" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "torch", specifier = ">=2.6.0" },
+    { name = "tqdm", specifier = ">=4.67.1" },
 ]
 
 [[package]]
