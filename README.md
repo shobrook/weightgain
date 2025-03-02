@@ -1,10 +1,10 @@
 # weightgain
 
-**Train an adapter for _any_ embedding model in under a minute.**
+**Fine-tune _any_ embedding model in under a minute. Even models from OpenAI, Cohere, Voyage, etc.**
 
-Weightgain lets you fine-tune any embedding model that's behind an API (OpenAI, Cohere, Voyage, etc.). It works by training an adapter that sits _on top_ of the model, instead of modifying the model itself. This adapter is a matrix of weights you can multiply your embeddings with to optimize them for your specific retrieval task.
+It works by training an adapter that sits _on top_ of the model, instead of modifying the model itself. This adapter transforms your embeddings after they're generated to boost retrieval accuracy and overall RAG performance.
 
-You can train an adapter in a couple lines of code, even if you don't have a dataset. 
+Weightgain lets you train an adapter in just a couple lines of code, even if you don't have a dataset.
 
 ## Installation
 
