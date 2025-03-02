@@ -2,9 +2,9 @@
 
 **Train an adapter for _any_ embedding model in under a minute.**
 
-The best embedding models are locked behind an API (OpenAI, Cohere, Voyage, etc.) and can't be fine-tuned. To get around this, you can train an adapter. This is a matrix of weights you can multiply embeddings by to optimize them for retrieval over your specific data.
+Weightgain lets you fine-tune any embedding model that's behind an API (OpenAI, Cohere, Voyage, etc.). It works by training an adapter that sits _on top_ of the model, instead of modifying the model itself. This adapter is a matrix of weights you can multiply your embeddings with to optimize them for your specific retrieval task.
 
-`weightgain` lets you train an adapter in a couple lines of code, even if you don't have a dataset.
+You can train an adapter in a couple lines of code, even if you don't have a dataset. 
 
 ## Installation
 
