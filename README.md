@@ -113,8 +113,8 @@ adapter.show_report()
 Behind the scenes, the adapter is just a `numpy` matrix that you can multiply your embeddings with:
 
 ```python
-embedding = model.get_embedding("Embed this sentence")
-new_embedding = adapter @ embedding
+old_embedding = model.get_embedding("Embed this sentence")
+new_embedding = adapter @ old_embedding
 ```
 
 You can access this matrix directly too:
@@ -127,4 +127,3 @@ adapter.matrix # returns numpy.ndarray
 
 1. Add option to train an MLP instead of a linear layer
 2. Add a method for easy hyperparameter search
-3. Move the embedding step to `Adapter.train` instead of dataset creation
