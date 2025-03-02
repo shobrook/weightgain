@@ -12,7 +12,7 @@ The best embedding models are locked behind an API (OpenAI, Cohere, Voyage, etc.
 > pip install weightgain
 ```
 
-## Usage
+## Quickstart
 
 ```python
 from weightgain import Dataset, Adapter, Model
@@ -32,12 +32,12 @@ dataset = Dataset.from_synthetic_chunks(
 # Train the adapter
 adapter = Adapter.train(dataset)
 
-# Apply adapter to the model
-model.set_adapter(adapter)
-
 # Generate a new embedding
-embeddings = model.get_embeddings(["Embed this sentence"])
+embedding = model.get_embedding("Embed this sentence")
+new_embedding = adapter @ embedding # matrix multiplication
 ```
+
+## Usage
 
 ### Choosing an Embedding Model
 
@@ -107,24 +107,22 @@ After training, you can generate a report with various plots (training loss, cos
 adapter.show_report()
 ```
 
-<!--TODO: Show example plots-->
+![Example report](./report.png)
 
 ### Using the Adapter
 
-```python
-model.set_adapter(adapter)
-embeddings = model.get_embeddings(["Embed this sentence"])
-```
-
-You can also use the `numpy` matrix directly:
+Behind the scenes, the adapter is just a `numpy` matrix that you can multiply your embeddings with:
 
 ```python
 embedding = model.get_embedding("Embed this sentence")
-new_embedding = embedding @ adapter.matrix # @ is matrix multiplication
+new_embedding = adapter @ embedding
 ```
 
-<!--TODO: Flesh this out more.-->
-<!--TODO: How you use the adapter is kinda jank. Maybe should be a function that wraps any LiteLLM embedding call-->
+You can access this matrix directly too:
+
+```python
+adapter.matrix # returns numpy.ndarray
+```
 
 ## Roadmap
 
