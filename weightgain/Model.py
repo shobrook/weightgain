@@ -1,32 +1,32 @@
 # Third party
 from litellm import embedding
 
-# Local
-try:
-    from weightgain.Adapter import Adapter
-except ImportError:
-    from Adapter import Adapter
-
 
 class Model(object):
-    def __init__(self, model: str, batch_size: int = 2048, **kwargs):
+    def __init__(self, model: str, batch_size: int = 100, **kwargs):
         self.model = model
         self.batch_size = batch_size
         self.kwargs = kwargs
         self.adapter = None
 
-    def set_adapter(self, adapter: Adapter):
+    def set_adapter(self, adapter):
         self.adapter = adapter
 
     def get_embeddings(self, inputs: list[str]) -> list[list[float]]:
-        response = embedding(self.model, inputs, **self.kwargs)
-
         embeddings = []
-        for result in sorted(response["data"], key=lambda d: d["index"]):
-            vector = result["embedding"]
-            if self.adapter:
-                vector = vector @ self.adapter
+        for i in range(0, len(inputs), self.batch_size):
+            response = embedding(
+                self.model, inputs[i : i + self.batch_size], **self.kwargs
+            )
 
-            embeddings.append(vector)
+            for result in sorted(response["data"], key=lambda d: d["index"]):
+                vector = result["embedding"]
+                if self.adapter:
+                    vector = vector @ self.adapter
+
+                embeddings.append(vector)
 
         return embeddings
+
+    def get_embedding(self, input: str) -> list[float]:
+        return self.get_embeddings([input])[0]
