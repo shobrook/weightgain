@@ -4,7 +4,6 @@ import asyncio
 # Third party
 import json_repair
 import pandas as pd
-import plotly.express as px
 from tqdm.asyncio import tqdm_asyncio
 from litellm import completion, acompletion
 from sklearn.model_selection import train_test_split
@@ -175,19 +174,26 @@ async def generate_dataset(
 
         dataset += [(chunk_id, question, chunk, 1) for question in questions]
 
-    df = pd.DataFrame(dataset, columns=["id", "text_1", "text_2", "label"])
+    df = pd.DataFrame(dataset, columns=["chunk_id", "text_1", "text_2", "label"])
     return df
 
 
 def split_dataset(dataset: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    # TODO: Ensure no test-set contamination (e.g. same chunk in both train and test)
+    if "chunk_id" in dataset.columns:
+        chunk_ids = dataset["chunk_id"].unique()
+        train_ids, test_ids = train_test_split(
+            chunk_ids, test_size=TEST_FRACTION, random_state=RANDOM_SEED
+        )
 
-    train_df, test_df = train_test_split(
-        dataset,
-        test_size=TEST_FRACTION,
-        stratify=dataset["label"],
-        random_state=RANDOM_SEED,
-    )
+        train_df = dataset[dataset["chunk_id"].isin(train_ids)].copy()
+        test_df = dataset[dataset["chunk_id"].isin(test_ids)].copy()
+    else:
+        train_df, test_df = train_test_split(
+            dataset,
+            test_size=TEST_FRACTION,
+            random_state=RANDOM_SEED,
+        )
+
     train_df.loc[:, "dataset"] = "train"
     test_df.loc[:, "dataset"] = "test"
 
@@ -255,20 +261,6 @@ class Dataset(object):
     def apply(self, func, axis=0, **kwargs):
         return self.df.apply(func, axis=axis, **kwargs)
 
-    def plot_similarities(self, save_path: str = None):
-        fig = px.histogram(
-            self.df,
-            x="cosine_similarity",
-            color="label",
-            barmode="overlay",
-            width=1000,
-            facet_row="dataset",
-        )
-        fig.show()
-
-        if save_path:
-            fig.write_image(save_path)
-
     @classmethod
     def from_chunks(
         cls, chunks: list[str], model: Model, llm: str, n_queries_per_chunk: int = 1
@@ -287,7 +279,15 @@ class Dataset(object):
         n_queries_per_chunk: int = 1,
     ) -> "Dataset":
         chunks = generate_chunks(prompt, llm, n_chunks)
-        df = asyncio.run(generate_dataset(chunks, llm, n_queries_per_chunk))
+
+        try:
+            loop = asyncio.get_running_loop()
+            df = loop.run_until_complete(
+                generate_dataset(chunks, llm, n_queries_per_chunk)
+            )
+        except RuntimeError:
+            df = asyncio.run(generate_dataset(chunks, llm, n_queries_per_chunk))
+
         df = add_negatives_and_embeddings(df, model)
         return cls(df)
 
