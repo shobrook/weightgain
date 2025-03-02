@@ -23,18 +23,17 @@ model = Model("openai/text-embedding-3-large")
 # Generate synthetic data (or supply your own)
 dataset = Dataset.from_synthetic_chunks(
     prompt="Chunks of code from an arbitrary Python codebase.",
-    model=model,
     llm="openai/gpt-4o-mini",
     n_chunks=25,
     n_queries_per_chunk=5
 )
 
 # Train the adapter
-adapter = Adapter.train(dataset)
+adapter = Adapter.train(dataset, model)
 
 # Generate a new embedding
-embedding = model.get_embedding("Embed this sentence")
-new_embedding = adapter @ embedding # matrix multiplication
+old_embedding = model.get_embedding("Embed this sentence")
+new_embedding = adapter @ old_embedding # matrix multiplication
 ```
 
 ## Usage
@@ -71,7 +70,6 @@ This will use `gpt-4o-mini` (or whatever LiteLLM model you want) to generate `1`
 ```python
 dataset = Dataset.from_synthetic_chunks(
     prompt="Chunks of code from an arbitrary Python codebase.",
-    model=model,
     llm="openai/gpt-4o-mini",
     n_chunks=25,
     n_queries_per_chunk=1
@@ -94,6 +92,7 @@ from weightgain import Adapter
 
 adapter = Adapter.train(
     dataset,
+    model,
     batch_size=25,
     max_epochs=50,
     learning_rate=100.0,
