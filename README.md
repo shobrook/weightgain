@@ -15,32 +15,27 @@ Weightgain lets you train an adapter in just a couple lines of code, even if you
 ## Quickstart
 
 ```python
-from weightgain import Dataset, Adapter, Model
+from weightgain import Dataset, Adapter
 
-# Choose an embedding model
-model = Model("openai/text-embedding-3-large")
-
-# Generate synthetic data (or supply your own)
+# Generate a dataset (or supply your own)
 dataset = Dataset.from_synthetic_chunks(
     prompt="Chunks of code from an arbitrary Python codebase.",
     llm="openai/gpt-4o-mini",
-    n_chunks=25,
-    n_queries_per_chunk=5
 )
 
 # Train the adapter
-adapter = Adapter.train(dataset, model)
+adapter = Adapter("openai/text-embedding-3-large")
+adapter.fit(dataset)
 
-# Generate a new embedding
-old_embedding = model.get_embedding("Embed this sentence")
-new_embedding = adapter @ old_embedding # matrix multiplication
+# Apply the adapter
+new_embeddings = adapter.transform(old_embeddings)
 ```
 
 ## Usage
 
 ### Choosing an Embedding Model
 
-Weightgain wraps LiteLLM to get access to model APIs. You can see the full list of supported embedding models [here.](https://docs.litellm.ai/docs/embedding/supported_embedding)
+Weightgain wraps LiteLLM to provide access to models. You can fine-tune models from OpenAI, Cohere, Voyage, and more. [Here's](https://docs.litellm.ai/docs/embedding/supported_embedding) the full list of supported models.
 
 <!--TODO: You can also define your own-->
 
@@ -54,10 +49,8 @@ You need a dataset of `[query, chunk]` pairs to get started. A chunk is a retrie
 from weightgain import Dataset
 
 chunks = [...] # list of strings
-model = Model("openai/text-embedding-3-large")
 dataset = Dataset.from_chunks(
     chunks,
-    model,
     llm="openai/gpt-4o-mini",
     n_queries_per_chunk=1
 )
@@ -90,9 +83,8 @@ dataset = Dataset.from_pairs(qa_pairs, model)
 ```python
 from weightgain import Adapter
 
-adapter = Adapter.train(
+adapter = Adapter.fit(
     dataset,
-    model,
     batch_size=25,
     max_epochs=50,
     learning_rate=100.0,
@@ -110,14 +102,12 @@ adapter.show_report()
 
 ### Using the Adapter
 
-Behind the scenes, the adapter is just a `numpy` matrix that you can multiply your embeddings with:
-
 ```python
-old_embedding = model.get_embedding("Embed this sentence")
-new_embedding = adapter @ old_embedding
+old_embeddings = [...] # list of vectors
+new_embeddings = adapter.transform(old_embeddings)
 ```
 
-You can access this matrix directly too:
+Behind the scenes, an adapter is just a matrix of weights that you can multiply your embeddings with. You can access this matrix like so:
 
 ```python
 adapter.matrix # returns numpy.ndarray

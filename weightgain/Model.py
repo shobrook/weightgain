@@ -5,7 +5,7 @@ from litellm import embedding
 class Model(object):
     def __init__(self, model: str, batch_size: int = 100, **kwargs):
         self.model = model
-        self.batch_size = batch_size
+        self.batch_size = batch_size  # TODO: Infer this from model name
         self.kwargs = kwargs
         self.adapter = None
 

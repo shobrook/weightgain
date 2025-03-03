@@ -92,9 +92,11 @@ def add_embeddings_to_df(dataset: pd.DataFrame, model: Model):
 
 
 class Adapter(object):
-    def __init__(self, matrix: np.ndarray, results: Optional[pd.DataFrame] = None):
-        self.matrix = matrix
-        self.results = results
+    def __init__(self, model: str):
+        self.model = Model(model)
+        self.matrix = None  # Linear transformation matrix
+        self.results = None  # Training results
+        self.dataset = None  # Original training set
 
     def __matmul__(self, embedding) -> np.ndarray:
         if isinstance(embedding, list):
@@ -102,31 +104,93 @@ class Adapter(object):
 
         return embedding @ self.matrix
 
-    def to_csv(self, path: str):
-        if self.results:
-            raise Exception("Cannot save Adapter without training results")
+    def fit(
+        self,
+        dataset: Dataset,
+        batch_size: int = 100,
+        max_epochs: int = 100,
+        learning_rate: float = 100.0,
+        dropout: float = 0.0,
+    ):
+        self.dataset = dataset
+        add_embeddings_to_df(dataset, self.model)
+        embedding_len = len(dataset["text_1_embedding"].values[0])
 
-        self.results.to_csv(path, index=False)
+        emb1_train, emb2_train, sim_train = tensors_from_df(
+            dataset[dataset["dataset"] == "train"]
+        )
+        emb1_test, emb2_test, sim_test = tensors_from_df(
+            dataset[dataset["dataset"] == "test"]
+        )
 
-    def plot_sim_dists(self):
-        fig1 = px.histogram(
-            self.results,
-            x="cosine_similarity",
-            color="label",
-            barmode="overlay",
-            width=500,
-            facet_row="dataset",
+        train_loader = torch.utils.data.DataLoader(
+            torch.utils.data.TensorDataset(emb1_train, emb2_train, sim_train),
+            batch_size=batch_size,
+            shuffle=True,
         )
-        fig2 = px.histogram(
-            self.results,
-            x="cosine_similarity_custom",
-            color="label",
-            barmode="overlay",
-            width=500,
-            facet_row="dataset",
+        matrix = torch.randn(embedding_len, embedding_len, requires_grad=True)
+
+        best_acc, best_matrix = 0, matrix
+        epochs, types, losses, accuracies = [], [], [], []
+        for epoch in range(1, 1 + max_epochs):
+            for emb1, emb2, target_sim in train_loader:
+                # Generate prediction and calculate loss
+                pred_sim = predict(emb1, emb2, matrix, dropout)
+                loss = mse_loss(pred_sim, target_sim)
+                loss.backward()  # Backpropagate loss
+
+                # Update matrix
+                with torch.no_grad():
+                    matrix -= matrix.grad * learning_rate
+                    matrix.grad.zero_()
+
+            # Calculate test loss
+            test_preds = predict(emb1_test, emb2_test, matrix, dropout)
+            test_loss = mse_loss(test_preds, sim_test)
+
+            # Compute new embeddings + similarities
+            apply_matrix_to_df(matrix, dataset)
+
+            # Calculate test accuracy
+            for dataset_type in ["train", "test"]:
+                data = dataset[dataset["dataset"] == dataset_type]
+                accuracy, stderr = accuracy_and_stderr(
+                    data["cosine_similarity_custom"], data["label"]
+                )
+
+                epochs.append(epoch)
+                types.append(dataset_type)
+                losses.append(
+                    loss.item() if dataset_type == "train" else test_loss.item()
+                )
+                accuracies.append(accuracy)
+
+                if accuracy > best_acc and dataset_type == "test":
+                    best_acc = accuracy
+                    best_matrix = matrix
+
+                print(
+                    f"Epoch {epoch}/{max_epochs}: {dataset_type} accuracy: {accuracy:0.1%} ± {1.96 * stderr:0.1%}"
+                )
+
+        results = pd.DataFrame(
+            {
+                "epoch": epochs,
+                "type": types,
+                "loss": losses,
+                "accuracy": accuracies,
+            }
         )
-        fig1.show()
-        fig2.show()
+        results["batch_size"] = batch_size
+        results["max_epochs"] = max_epochs
+        results["learning_rate"] = learning_rate
+        results["dropout"] = dropout
+
+        self.matrix = best_matrix.detach().numpy()
+        self.results = results
+
+    def transform(self, embeddings: list[list[float]]) -> list[list[float]]:
+        return [self @ embedding for embedding in embeddings]
 
     def show_report(self, save_path: str = None):
         if self.results is None:
@@ -214,95 +278,3 @@ class Adapter(object):
             print(f"Report saved to {save_path}")
         else:
             fig.show()
-
-    @classmethod
-    def from_file(cls, path: str) -> "Adapter":
-        matrix = np.load(path)
-        return cls(matrix)
-
-    @classmethod
-    def train(
-        cls,
-        dataset: Dataset,
-        model: Model,
-        batch_size: int = 100,
-        max_epochs: int = 100,
-        learning_rate: float = 100.0,
-        dropout: float = 0.0,
-    ) -> "Adapter":
-        add_embeddings_to_df(dataset, model)
-        embedding_len = len(dataset["text_1_embedding"].values[0])
-
-        emb1_train, emb2_train, sim_train = tensors_from_df(
-            dataset[dataset["dataset"] == "train"]
-        )
-        emb1_test, emb2_test, sim_test = tensors_from_df(
-            dataset[dataset["dataset"] == "test"]
-        )
-
-        train_loader = torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(emb1_train, emb2_train, sim_train),
-            batch_size=batch_size,
-            shuffle=True,
-        )
-        matrix = torch.randn(embedding_len, embedding_len, requires_grad=True)
-
-        best_acc, best_matrix = 0, matrix
-        epochs, types, losses, accuracies = [], [], [], []
-        for epoch in range(1, 1 + max_epochs):
-            for emb1, emb2, target_sim in train_loader:
-                # Generate prediction and calculate loss
-                pred_sim = predict(emb1, emb2, matrix, dropout)
-                loss = mse_loss(pred_sim, target_sim)
-                loss.backward()  # Backpropagate loss
-
-                # Update matrix
-                with torch.no_grad():
-                    matrix -= matrix.grad * learning_rate
-                    matrix.grad.zero_()
-
-            # Calculate test loss
-            test_preds = predict(emb1_test, emb2_test, matrix, dropout)
-            test_loss = mse_loss(test_preds, sim_test)
-
-            # Compute new embeddings + similarities
-            apply_matrix_to_df(matrix, dataset)
-
-            # Calculate test accuracy
-            for dataset_type in ["train", "test"]:
-                data = dataset[dataset["dataset"] == dataset_type]
-                accuracy, stderr = accuracy_and_stderr(
-                    data["cosine_similarity_custom"], data["label"]
-                )
-
-                epochs.append(epoch)
-                types.append(dataset_type)
-                losses.append(
-                    loss.item() if dataset_type == "train" else test_loss.item()
-                )
-                accuracies.append(accuracy)
-
-                if accuracy > best_acc and dataset_type == "test":
-                    best_acc = accuracy
-                    best_matrix = matrix
-
-                print(
-                    f"Epoch {epoch}/{max_epochs}: {dataset_type} accuracy: {accuracy:0.1%} ± {1.96 * stderr:0.1%}"
-                )
-
-        results = pd.DataFrame(
-            {
-                "epoch": epochs,
-                "type": types,
-                "loss": losses,
-                "accuracy": accuracies,
-            }
-        )
-        results["batch_size"] = batch_size
-        results["max_epochs"] = max_epochs
-        results["learning_rate"] = learning_rate
-        results["dropout"] = dropout
-
-        adapter = cls(best_matrix.detach().numpy(), results)
-        adapter.dataset = dataset
-        return adapter

@@ -273,8 +273,8 @@ class Dataset(object):
         cls,
         prompt: str,
         llm: str,
-        n_chunks: int = 100,
-        n_queries_per_chunk: int = 1,
+        n_chunks: int = 50,
+        n_queries_per_chunk: int = 10,
     ) -> "Dataset":
         chunks = generate_chunks(prompt, llm, n_chunks)
         df = sync_generate_dataset(chunks, llm, n_queries_per_chunk)
