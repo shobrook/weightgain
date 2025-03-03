@@ -35,13 +35,13 @@ new_embeddings = adapter.transform(old_embeddings)
 
 ### Choosing an Embedding Model
 
-Weightgain wraps LiteLLM to provide access to models. You can fine-tune models from OpenAI, Cohere, Voyage, and more. [Here's](https://docs.litellm.ai/docs/embedding/supported_embedding) the full list of supported models.
+Weightgain wraps LiteLLM. You can fine-tune any embedding model supported by LiteLLM, e.g. models from OpenAI, Cohere, Voyage, etc. [Here's](https://docs.litellm.ai/docs/embedding/supported_embedding) the full list of supported models.
 
 <!--TODO: You can also define your own-->
 
 ### Building the Dataset
 
-You need a dataset of `[query, chunk]` pairs to get started. A chunk is a retrieval result, e.g. a code snippet or excerpt from a document. You can either generate a synthetic dataset or supply your own.
+You need a dataset of `[query, chunk]` pairs to get started. A chunk is a retrieval result, e.g. a code snippet or excerpt from a document. And the query is a string that's _similar_ to the chunk and should match in a vector search. You can either generate a synthetic dataset or supply your own.
 
 **If you already have chunks:**
 
@@ -56,7 +56,7 @@ dataset = Dataset.from_chunks(
 )
 ```
 
-This will use `gpt-4o-mini` (or whatever LiteLLM model you want) to generate `1` query per chunk.
+This will use OpenAI's `gpt-4o-mini` (or whatever LiteLLM model you want) to generate `1` query per chunk.
 
 **If you don't have chunks:**
 
@@ -100,7 +100,7 @@ adapter.show_report()
 
 ![Example report](./report.png)
 
-### Using the Adapter
+### Applying the Adapter
 
 ```python
 old_embeddings = [...] # list of vectors
