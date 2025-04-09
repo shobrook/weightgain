@@ -2,7 +2,7 @@
 
 **Fine-tune _any_ embedding model in under a minute. Even closed-source models from OpenAI, Cohere, Voyage, etc.**
 
-It works by training an [adapter](https://research.trychroma.com/embedding-adapters) that sits on top of the model, transforming the embeddings _after_ they're generated. This produces task-specific embeddings optimized for your specific RAG/retrieval use case. 
+Weightgain works by training an [adapter](https://research.trychroma.com/embedding-adapters) that sits on top of the model, transforming the embeddings _after_ they're generated. This produces task-specific embeddings optimized for your specific RAG/retrieval use case. 
 
 With weightgain, you can train an adapter in just a couple lines of code –– even if you don't have a dataset.
 
